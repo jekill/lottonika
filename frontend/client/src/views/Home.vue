@@ -1,18 +1,37 @@
 <template>
   <div class="home">
-    <img alt="Vue logo" src="../assets/logo.png">
-    <HelloWorld msg="Welcome to Your Vue.js + TypeScript App"/>
+    <button class="button--green" @click="handleEnterClick">{{ $t('button.enter-game.text') }}</button>
   </div>
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator';
-import HelloWorld from '@/components/HelloWorld.vue'; // @ is an alias to /src
+  import {Component, Vue, Inject} from 'vue-property-decorator';
+  import {GameApi} from '@/services/GameApi';
 
-@Component({
-  components: {
-    HelloWorld,
-  },
-})
-export default class Home extends Vue {}
+  @Component({})
+  export default class Home extends Vue {
+    @Inject() public gameApi!: GameApi;
+
+    public async handleEnterClick() {
+      const cardDto = await this.gameApi.createCard();
+      this.$router.push({name: 'card', params: {id: cardDto.id}});
+    }
+  }
 </script>
+<style scoped>
+  .home {
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .button--green {
+    @apply bg-green-500 text-white py-2 px-4 rounded;
+  }
+
+  .button--green:hover {
+    @apply bg-green-400 text-white;
+  }
+
+</style>

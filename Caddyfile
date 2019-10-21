@@ -1,0 +1,4 @@
+0.0.0.0:3333
+proxy / localhost:4444/
+proxy /lott localhost:5555/
+log stdout
