@@ -1,4 +1,6 @@
+import {UUID} from '@/types/GenericTypes';
+
 export interface CardDto {
-  id: string;
+  id: UUID;
   number: number;
 }

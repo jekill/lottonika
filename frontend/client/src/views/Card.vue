@@ -6,15 +6,20 @@
       'card-page--win': isWin===true
     }"
   >
+    <div v-if="!card && !loading">Error</div>
+    <div></div>
     <div
+      v-if="card"
       class="card"
       :class="{
         'card--fail': isWin===false,
         'card--win': isWin===true
       }"
     >
-      <p>You are in the Game!</p>
-      <p class="text-gray-500">Please, wait</p>
+      <p>{{ $t('card.you-are-in-the-game') }}</p>
+      <p class="text-gray-500">{{ $t('card.wait-text') }}</p>
+      <div class="card__your-number-text">{{ $t('card.your-number-text') }}</div>
+      <div class="card__number">{{ card.number }}</div>
       <div class="counter card__counter">
         {{ counterNumber }}
       </div>
@@ -38,23 +43,36 @@
   export default class Card extends Vue {
     public isWin: boolean | null = null;
     public counterNumber: number = 0;
-    public card!: CardDto;
+    public card: CardDto | null = null;
+    public loading = true;
     @Inject() public gameApi!: GameApi;
 
-    public created() {
-      this.card = {
-        id: '333',
-        number: 333,
-      };
-      setInterval(() => {
-        this.counterNumber++;
-      }, 400);
+    public async created() {
+      const cardId = this.$route.params.id;
+
+      this.loading = true;
+      try {
+        this.card = await this.gameApi.getCard(cardId) || null;
+      }catch (e) {
+      }finally {
+        this.loading = false;
+      }
+
+      // this.card = {
+      //   id: '333',
+      //   number: 333,
+      // };
+      // setInterval(() => {
+      //   this.counterNumber++;
+      // }, 400);
     }
 
     public async handleStopGame() {
       if (confirm(String(this.$t('stop-game.are-you-sure.confirmation-text')))) {
-        await this.gameApi.stopGame(this.card.id);
-        this.$router.push({name: 'home'});
+        if (this.card) {
+          await this.gameApi.stopGame(this.card.id);
+        }
+        await this.$router.push({name: 'home'});
       }
     }
   }
@@ -84,9 +102,13 @@
     @apply rounded border-2;
     @apply px-6 py-4 m-6;
     width: 100%;
-    max-width: 100%;
     text-align: center;
     height: 80%;
+  }
+
+  .card__number {
+    @apply font-extrabold text-blue-500;
+    font-size: 120px;
   }
 
   .card--fail {

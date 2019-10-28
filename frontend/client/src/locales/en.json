@@ -1,4 +1,8 @@
 {
   "button.enter-game.text": "Yes, I'm in the Game!",
-  "button.leave-game.text": "Leave the Game"
+  "button.leave-game.text": "Leave the Game",
+  "card.you-are-in-the-game": "You are in the Game!",
+  "card.wait-text": "Please, wait",
+  "card.your-number-text": "Your number"
+
 }

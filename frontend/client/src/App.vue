@@ -8,7 +8,7 @@
   import {GameApi} from '@/services/GameApi';
   import axios from 'axios';
 
-  const gameApi = new GameApi(axios.create());
+  const gameApi = new GameApi(axios.create({baseURL:'/api'}));
 
   @Component({
     provide: {
