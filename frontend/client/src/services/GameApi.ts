@@ -3,7 +3,7 @@ import {CardDto} from '@/models/CardDto';
 import {UUID} from '@/types/GenericTypes';
 
 export class GameApi {
-  constructor(private transport: AxiosInstance) {
+  constructor(private transport: AxiosInstance, private wsHost: string) {
   }
 
   public createCard(): Promise<CardDto> {
@@ -12,7 +12,11 @@ export class GameApi {
   }
 
   public getCard(id: UUID): Promise<CardDto> {
-    return this.transport.get<CardDto>('/cards/' + id).then(r => r.data);
+    return this.transport.get<CardDto>('/cards/' + id).then((r) => r.data);
+  }
+
+  public wsConnect(cardId: UUID): WebSocket {
+    return new WebSocket(`${this.wsHost}${this.transport.defaults.baseURL}/cards/${encodeURIComponent(cardId)}/ws`);
   }
 
   public stopGame(cardId: UUID): Promise<void> {

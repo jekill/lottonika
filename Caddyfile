@@ -2,5 +2,6 @@
 proxy / localhost:4444/
 proxy /api localhost:5555 {
 	without /api
+	websocket
 }
 log stdout

@@ -20,14 +20,19 @@
       <p class="text-gray-500">{{ $t('card.wait-text') }}</p>
       <div class="card__your-number-text">{{ $t('card.your-number-text') }}</div>
       <div class="card__number">{{ card.number }}</div>
+      <div v-if="isWsOpen">Connected</div>
       <div class="counter card__counter">
         {{ counterNumber }}
+      </div>
+      <div>
+        <button @click="ws.send(JSON.stringify({id: '123', type: 'hello', payload: 'hello'}))"/>
       </div>
       <div class="card__footer">
         <button
           class="button--red card__stop-button"
           @click="handleStopGame"
-        >{{ $t('button.leave-game.text') }}
+        >
+          {{ $t('button.leave-game.text') }}
         </button>
       </div>
     </div>
@@ -45,6 +50,7 @@
     public counterNumber: number = 0;
     public card: CardDto | null = null;
     public loading = true;
+    public ws: WebSocket | null = null;
     @Inject() public gameApi!: GameApi;
 
     public async created() {
@@ -53,8 +59,14 @@
       this.loading = true;
       try {
         this.card = await this.gameApi.getCard(cardId) || null;
-      }catch (e) {
-      }finally {
+        // debugger;
+        this.ws = this.gameApi.wsConnect(cardId);
+        this.ws.addEventListener('onmessage', this.onServerMessage);
+        this.ws.send(JSON.stringify({id: cardId, type: 'hello', payload: 'hello'}));
+        // (<any>window).__ws = this.ws;
+      } catch (e) {
+        console.error(e);
+      } finally {
         this.loading = false;
       }
 
@@ -65,6 +77,14 @@
       // setInterval(() => {
       //   this.counterNumber++;
       // }, 400);
+    }
+
+    public onServerMessage(message: any) {
+      console.log(message);
+    }
+
+    public isWsOpen() {
+      return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
     }
 
     public async handleStopGame() {

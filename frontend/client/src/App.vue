@@ -8,7 +8,8 @@
   import {GameApi} from '@/services/GameApi';
   import axios from 'axios';
 
-  const gameApi = new GameApi(axios.create({baseURL:'/api'}));
+  const wsHost = (window.location.protocol === 'https:' ? 'wss' : 'ws') + '://' + window.location.host;
+  const gameApi = new GameApi(axios.create({baseURL: '/api'}), wsHost);
 
   @Component({
     provide: {
