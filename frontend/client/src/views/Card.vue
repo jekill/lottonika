@@ -40,62 +40,80 @@
 </template>
 
 <script lang="ts">
-  import {Component, Inject, Vue} from 'vue-property-decorator';
-  import {GameApi} from '@/services/GameApi';
-  import {CardDto} from '@/models/CardDto';
+import { Component, Inject, Vue } from 'vue-property-decorator';
+import { GameApi } from '@/services/GameApi';
+import { CardDto } from '@/models/CardDto';
+import { CommunicationMessages } from '@/types/Messages';
 
-  @Component({})
-  export default class Card extends Vue {
-    public isWin: boolean | null = null;
-    public counterNumber: number = 0;
-    public card: CardDto | null = null;
-    public loading = true;
-    public ws: WebSocket | null = null;
-    @Inject() public gameApi!: GameApi;
+@Component({})
+export default class Card extends Vue {
+  public counterNumber: number = 0;
+  public card: CardDto | null = null;
+  public loading = true;
+  public ws: WebSocket | null = null;
+  @Inject() public gameApi!: GameApi;
 
-    public async created() {
-      const cardId = this.$route.params.id;
+  public async created() {
+    const cardId = this.$route.params.id;
 
-      this.loading = true;
-      try {
-        this.card = await this.gameApi.getCard(cardId) || null;
-        // debugger;
+    this.loading = true;
+    try {
+      this.card = await this.gameApi.getCard(cardId) || null;
+      // debugger;
+      if (this.card?.is_closed === false) {
         this.ws = this.gameApi.wsConnect(cardId);
-        this.ws.addEventListener('onmessage', this.onServerMessage);
-        this.ws.send(JSON.stringify({id: cardId, type: 'hello', payload: 'hello'}));
-        // (<any>window).__ws = this.ws;
-      } catch (e) {
-        console.error(e);
-      } finally {
-        this.loading = false;
+        this.ws.addEventListener('message', this.onServerMessage);
+        this.ws.addEventListener('open', () => {
+          this.ws?.send(JSON.stringify({ id: cardId, type: 'hello', payload: 'hello' }));
+        });
+        this.ws.addEventListener('close', () => {
+          alert(`CLOSE`);
+        });
       }
-
-      // this.card = {
-      //   id: '333',
-      //   number: 333,
-      // };
-      // setInterval(() => {
-      //   this.counterNumber++;
-      // }, 400);
+      // (<any>window).__ws = this.ws;
+    } catch (e) {
+      console.error(e);
+    } finally {
+      this.loading = false;
     }
 
-    public onServerMessage(message: any) {
-      console.log(message);
-    }
+    // this.card = {
+    //   id: '333',
+    //   number: 333,
+    // };
+    // setInterval(() => {
+    //   this.counterNumber++;
+    // }, 400);
+  }
 
-    public isWsOpen() {
-      return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  public get isWin(): boolean | null {
+    if (this.card?.is_closed === true) {
+      return Boolean(this.card.is_win);
     }
+    return null;
+  }
 
-    public async handleStopGame() {
-      if (confirm(String(this.$t('stop-game.are-you-sure.confirmation-text')))) {
-        if (this.card) {
-          await this.gameApi.stopGame(this.card.id);
-        }
-        await this.$router.push({name: 'home'});
+  public onServerMessage(message: MessageEvent) {
+    const data = JSON.parse(message.data) as CommunicationMessages;
+    if (data?.payload?.card) {
+      this.card = data?.payload?.card;
+    }
+    console.log(message);
+  }
+
+  public get isWsOpen() {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  public async handleStopGame() {
+    if (confirm(String(this.$t('stop-game.are-you-sure.confirmation-text')))) {
+      if (this.card) {
+        await this.gameApi.stopGame(this.card.id);
       }
+      await this.$router.push({ name: 'home' });
     }
   }
+}
 </script>
 
 <style scoped>

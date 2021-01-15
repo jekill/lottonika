@@ -1,0 +1,11 @@
+POST http://0.0.0.0:3333/api/game-manager/actions
+Content-Type: application/json
+
+{"action": "startRound"}
+
+###
+
+POST http://0.0.0.0:3333/api/game-manager/actions2
+Content-Type: application/json
+
+{"action": "startRound"}

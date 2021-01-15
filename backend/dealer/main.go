@@ -1,9 +1,9 @@
 package main
 
 import (
+	// "encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"time"
 
@@ -14,8 +14,10 @@ import (
 
 // Card data
 type Card struct {
-	ID     string `json:"id"`
-	Number int16  `json:"number"`
+	ID       string `json:"id"`
+	Number   int16  `json:"number"`
+	IsClosed bool   `json:"is_closed"`
+	IsWin    bool   `json:"is_win"`
 }
 
 // Message object
@@ -25,22 +27,34 @@ type Message struct {
 	Payload string `json:"payload"`
 }
 
-// RoundMessage is the message about resulf of user's round
+// RoundMessage a message for UI
 type RoundMessage struct {
-	IsWin bool `json:"Boolean"`
+	ID      string              `json:"id"`
+	Type    string              `json:"type"`
+	Payload RoundMessagePayload `json:"payload"`
+}
+
+// RoundMessagePayload is the payload
+type RoundMessagePayload struct {
+	IsWin bool `json:"is_win"`
+	Card  Card `json:"card"`
+}
+
+// IsWinMessage is the message about resulf of user's round
+type IsWinMessage struct {
+	IsWin bool `json:"isWin"`
 }
 
 // ClientsGame is information about client's game
 type ClientsGame struct {
-	Card      Card
-	ws        *websocket.Conn
-	roundChan chan RoundMessage
-	isClosed  *bool
-	isWin     *bool
+	Card *Card
+	ws   *websocket.Conn
+	// roundChan chan RoundMessage
+	roundChans []chan IsWinMessage
 }
 
 // ClientsGameCollection store or collection map "card id" -> ClientGame{}
-type ClientsGameCollection map[string]ClientsGame
+type ClientsGameCollection map[string]*ClientsGame
 
 var upgader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -65,13 +79,15 @@ func main() {
 	r.HandleFunc("/cards/{id:[^/]+}", handleCardEndpointGET)
 	r.HandleFunc("/cards/{id}/ws", handleWSConnections)
 
-	r.HandleFunc("/game-manager/actions", CretaeHandleCreateAction(gameStore)).Methods(http.MethodPost)
+	r.HandleFunc("/game-manager/actions", CretaeHandleCreateAction(&gameStore)).Methods(http.MethodPost)
 
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "<html><body>OK</body></html>")
 	})
 
 	go lastNumberGenerator()
+
+	// go startRound()
 
 	srv := &http.Server{
 		Addr: "localhost:5555",
@@ -118,19 +134,16 @@ func handleCardEndpointGET(w http.ResponseWriter, r *http.Request) {
 
 func handleCardEndpointPOST(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-type", "application/json")
-	uuid, err := uuid.NewV4()
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+	uuid := uuid.NewV4()
+
 	card := Card{
 		ID:     uuid.String(),
 		Number: <-lastNumberChan,
 	}
 
-	gameStore[card.ID] = ClientsGame{
-		Card:      card,
-		roundChan: make(chan RoundMessage, 1),
+	gameStore[card.ID] = &ClientsGame{
+		Card:      &card,
+		roundChans: make([]chan IsWinMessage, 1),
 	}
 
 	w.WriteHeader(http.StatusCreated)
@@ -146,9 +159,9 @@ func handleWSConnections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println(id)
+	fmt.Println("Handle ws connect", id)
 	item, ok := gameStore[id]
-	fmt.Println(item.Card.ID)
+	fmt.Println("Item card is found in the storage", item.Card.ID)
 
 	if !ok {
 		fmt.Println("Id not found")
@@ -161,37 +174,38 @@ func handleWSConnections(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	defer ws.Close()
+	roundChan := make(chan IsWinMessage, 1)
 
-	for {
-		if err != nil {
-			log.Printf("Error of message")
-			continue
-		}
+	item.roundChans = append(item.roundChans, roundChan)
+	roundChanIndex := len(item.roundChans) - 1
 
-		round := <-item.roundChan
-		ws.WriteJSON(round)
-	}
-}
+	defer func() {
+		ws.Close()
+		fmt.Println("Websocket closed for card:", item.Card.ID)
+		item.roundChans = append(item.roundChans[:roundChanIndex], item.roundChans[(roundChanIndex+1):]...)
+	}()
 
-func startRound() {
-	var ids []string
+	// item.ws = ws
 
-	for id, card := range gameStore {
-		fmt.Printf("start game for %s %d\n", id, card.Card.Number)
-		ids = append(ids, id)
-	}
-
-	rand.Shuffle(len(ids), func(i, j int) {
-		ids[i], ids[j] = ids[j], ids[i]
+	ws.SetCloseHandler(func(code int, text string) error {
+		fmt.Println("WSocket closeHandler:", item.Card.ID)
+		item.ws = nil
+		return nil
 	})
 
-	for i := range ids {
-		fmt.Printf(gameStore[ids[i]].Card.ID)
-	}
+	for {
+		<-roundChan
 
-	if len(ids) == 3 {
-		*gameStore[ids[0]].isClosed = true
-		return
+		messageID := uuid.NewV4().String()
+
+		ws.WriteJSON(&RoundMessage{
+			ID:   messageID,
+			Type: "round",
+			Payload: RoundMessagePayload{
+				IsWin: item.Card.IsWin,
+				Card:  *item.Card,
+			},
+		})
 	}
 }
+
