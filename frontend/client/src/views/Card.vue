@@ -9,28 +9,35 @@
     <div v-if="!card && !loading">Error</div>
     <div></div>
     <div
-      v-if="card"
-      class="card"
-      :class="{
+        v-if="card"
+        class="card"
+        :class="{
         'card--fail': isWin===false,
         'card--win': isWin===true
-      }"
+        }"
     >
       <p>{{ $t('card.you-are-in-the-game') }}</p>
       <p class="text-gray-500">{{ $t('card.wait-text') }}</p>
       <div class="card__your-number-text">{{ $t('card.your-number-text') }}</div>
-      <div class="card__number">{{ card.number }}</div>
+      <div
+          class="card__number"
+          :class="{'card__number--small':counterNumber>0}"
+      >{{ card.number }}
+      </div>
       <div v-if="isWsOpen">Connected</div>
-      <div class="counter card__counter">
-        {{ counterNumber }}
-      </div>
-      <div>
-        <button @click="ws.send(JSON.stringify({id: '123', type: 'hello', payload: 'hello'}))"/>
-      </div>
+      <transition
+          v-if="counterNumber>0"
+          name="number-change"
+          mode="out-in"
+      >
+        <div class="counter card__counter" v-bind:key="'counter-number_'+counterNumber">
+          {{ counterNumber }}
+        </div>
+      </transition>
       <div class="card__footer">
         <button
-          class="button--red card__stop-button"
-          @click="handleStopGame"
+            class="button--red card__stop-button"
+            @click="handleStopGame"
         >
           {{ $t('button.leave-game.text') }}
         </button>
@@ -43,7 +50,7 @@
 import { Component, Inject, Vue } from 'vue-property-decorator';
 import { GameApi } from '@/services/GameApi';
 import { CardDto } from '@/models/CardDto';
-import { CommunicationMessages } from '@/types/Messages';
+import { CommunicationMessages, RefreshMessage, RoundMessage } from '@/types/Messages';
 
 @Component({})
 export default class Card extends Vue {
@@ -53,8 +60,17 @@ export default class Card extends Vue {
   public ws: WebSocket | null = null;
   @Inject() public gameApi!: GameApi;
 
+  public destroyed() {
+    this.ws?.close();
+  }
+
   public async created() {
     const cardId = this.$route.params.id;
+    // const inc = () => setTimeout(() => {
+    //   this.counterNumber++;
+    //   inc();
+    // }, 5000);
+    // inc();
 
     this.loading = true;
     try {
@@ -67,7 +83,7 @@ export default class Card extends Vue {
           this.ws?.send(JSON.stringify({ id: cardId, type: 'hello', payload: 'hello' }));
         });
         this.ws.addEventListener('close', () => {
-          alert(`CLOSE`);
+          console.log('WS closed');
         });
       }
       // (<any>window).__ws = this.ws;
@@ -76,14 +92,6 @@ export default class Card extends Vue {
     } finally {
       this.loading = false;
     }
-
-    // this.card = {
-    //   id: '333',
-    //   number: 333,
-    // };
-    // setInterval(() => {
-    //   this.counterNumber++;
-    // }, 400);
   }
 
   public get isWin(): boolean | null {
@@ -95,8 +103,17 @@ export default class Card extends Vue {
 
   public onServerMessage(message: MessageEvent) {
     const data = JSON.parse(message.data) as CommunicationMessages;
-    if (data?.payload?.card) {
-      this.card = data?.payload?.card;
+
+    if (!data) {
+      return;
+    }
+
+    if ((data as RefreshMessage).payload?.card) {
+      this.card = (data as RefreshMessage).payload.card;
+    }
+
+    if (data.type === 'counter') {
+      this.counterNumber = ~~data.payload.counter;
     }
     console.log(message);
   }
@@ -146,7 +163,15 @@ export default class Card extends Vue {
 
   .card__number {
     @apply font-extrabold text-blue-500;
-    font-size: 120px;
+    @apply text-9xl;
+    transition: font-size 0.3s ease-in-out;
+  }
+
+  .card__number--small {
+    @apply text-6xl;
+  }
+
+  .card__counter {
   }
 
   .card--fail {
@@ -163,7 +188,7 @@ export default class Card extends Vue {
   }
 
   .counter {
-    @apply text-6xl;
+    @apply text-9xl;
   }
 
   .button--red {
@@ -172,5 +197,21 @@ export default class Card extends Vue {
 
   .button--red:hover {
     @apply bg-red-400 text-white ;
+  }
+
+  .number-change-enter-active, .number-change-leave-active {
+    transition: opacity .3s ease, font-size 0.3s ease-in-out, color 0.3s ease-in-out;
+  }
+
+  .number-change-enter, .number-change-leave-to {
+    opacity: 0;
+  }
+
+  .number-change-enter {
+    font-size: 0.4rem;
+  }
+
+  .number-change-leave-to {
+    /*font-size: 2rem;*/
   }
 </style>

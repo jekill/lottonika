@@ -1,13 +1,15 @@
 package main
 
 import (
-	"math/rand"
-	"time"
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
+	"time"
+
+	uuid "github.com/satori/go.uuid"
 )
 
 type actionRequestData struct {
@@ -23,13 +25,13 @@ func CretaeHandleCreateAction(gameStore *ClientsGameCollection) http.HandlerFunc
 		var action actionRequestData
 		err := decoder.Decode(&action)
 
-		if err!=nil{
+		if err != nil {
 			log.Println("ERROR parsing requiest")
-			return;
+			return
 		}
 
 		fmt.Println("POST HANDLER ACTION", action.Action)
-		if action.Action=="startRound"{
+		if action.Action == "startRound" {
 			go StartRound(gameStore)
 		}
 
@@ -37,17 +39,17 @@ func CretaeHandleCreateAction(gameStore *ClientsGameCollection) http.HandlerFunc
 	}
 }
 
-
 // StartRound starts a new round
 func StartRound(gameStore *ClientsGameCollection) {
+	roundState = IS_STARTED
 	fmt.Println("Start a round")
-	time.Sleep(time.Second * (10 + time.Duration(rand.Intn(20))))
+	time.Sleep(time.Second * (10 + time.Duration(rand.Intn(5))))
 	fmt.Println("Sleep end")
 
 	var ids []string
 
-	for id, card := range *gameStore {
-		fmt.Printf("start game for %s %d\n", id, card.Card.Number)
+	for id, item := range *gameStore {
+		fmt.Printf("start game for %s %d\n", id, item.Card.Number)
 		ids = append(ids, id)
 	}
 
@@ -55,7 +57,27 @@ func StartRound(gameStore *ClientsGameCollection) {
 		ids[i], ids[j] = ids[j], ids[i]
 	})
 
-	for i := range ids {
+	var i int8
+	for i = 0; i < 3; i++ {
+		fmt.Println("_COUNTER:", i+1)
+		for id := range ids {
+			item := (*gameStore)[ids[id]]
+			mc := MessageCounter{
+				Type: "counter",
+				Payload: MessageCounterPayload{
+					Counter: (i + 1),
+				},
+			}
+			SendMessageToGameItemCard(item, Message{
+				Type:    mc.Type,
+				Payload: mc.Payload,
+			})
+		}
+		TriggerUpdateDashboardState(i+1)
+		time.Sleep(2 * time.Second)
+	}
+
+	for i := range ids[:(len(ids)/2)] {
 		item := (*gameStore)[ids[i]]
 		fmt.Println("Close card:", item.Card.ID)
 
@@ -66,9 +88,29 @@ func StartRound(gameStore *ClientsGameCollection) {
 
 		for chanIdx, roundChan := range item.roundChans {
 			fmt.Println("Send message card:", item.Card.ID, "for ", chanIdx)
-			roundChan <- IsWinMessage{
-				IsWin: item.Card.IsWin,
+			messageID := uuid.NewV4().String()
+			roundMessage := &RoundMessage{
+				ID:   messageID,
+				Type: "round",
+				Payload: RoundMessagePayload{
+					IsWin: item.Card.IsWin,
+					Card:  *item.Card,
+				},
+			}
+			roundChan <- Message{
+				Type:    roundMessage.Type,
+				Payload: roundMessage.Payload,
 			}
 		}
+	}
+	roundState = IS_FINISHED
+	TriggerUpdateDashboardState()
+}
+
+// SendMessageToGameItemCard sends messages to chanels
+func SendMessageToGameItemCard(gameItem *ClientsGame, message Message) {
+	for _, connChan := range gameItem.roundChans {
+		fmt.Println("SEND TO GAME ITEM CHAN ", gameItem, " connChan: ", connChan)
+		connChan <- message
 	}
 }
