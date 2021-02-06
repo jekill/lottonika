@@ -16,17 +16,34 @@
         'card--win': isWin===true
         }"
     >
-      <p>{{ $t('card.you-are-in-the-game') }}</p>
-      <p class="text-gray-500">{{ $t('card.wait-text') }}</p>
+      <div v-if="isWsOpen">Connected</div>
+      <div v-else="isWsOpen">Offline</div>
+
+      <p v-if="roundState === RoundStateEnum.NOT_STARTED">{{ $t('card.you-are-in-the-game') }}</p>
+
+      <p
+          class="text-gray-500"
+          v-if="roundState===RoundStateEnum.STARTED"
+      >
+        {{ $t('card.round-started') }}
+      </p>
+
+      <p class="text-gray-500" v-if="roundState===RoundStateEnum.NOT_STARTED">{{ $t('card.wait-text') }}</p>
+      <p v-else class="round-info">
+        <i18n :path="`dashboard.round-is.${roundState}`">
+          <b place="number" class="round-info__number">{{ currentRound }}</b>
+        </i18n>
+      </p>
+
       <div class="card__your-number-text">{{ $t('card.your-number-text') }}</div>
       <div
           class="card__number"
-          :class="{'card__number--small':counterNumber>0}"
+          :class="{'card__number--small':isCounterShown}"
       >{{ card.number }}
       </div>
-      <div v-if="isWsOpen">Connected</div>
+
       <transition
-          v-if="counterNumber>0"
+          v-if="isCounterShown"
           name="number-change"
           mode="out-in"
       >
@@ -35,12 +52,14 @@
         </div>
       </transition>
       <div class="card__footer">
+        <!--
         <button
             class="button--red card__stop-button"
             @click="handleStopGame"
         >
           {{ $t('button.leave-game.text') }}
         </button>
+        -->
       </div>
     </div>
   </div>
@@ -50,14 +69,18 @@
 import { Component, Inject, Vue } from 'vue-property-decorator';
 import { GameApi } from '@/services/GameApi';
 import { CardDto } from '@/models/CardDto';
-import { CommunicationMessages, RefreshMessage, RoundMessage } from '@/types/Messages';
+import { CommunicationMessages, RefreshMessage } from '@/types/Messages';
+import { RoundState } from '@/types/RoundState';
 
 @Component({})
 export default class Card extends Vue {
-  public counterNumber: number = 0;
+  public counterNumber: string = '';
   public card: CardDto | null = null;
+  public roundState: RoundState = RoundState.NOT_STARTED;
+  public RoundStateEnum = RoundState;
   public loading = true;
   public ws: WebSocket | null = null;
+  public wsReadyState: number = WebSocket.CLOSED;
   @Inject() public gameApi!: GameApi;
 
   public destroyed() {
@@ -77,14 +100,7 @@ export default class Card extends Vue {
       this.card = await this.gameApi.getCard(cardId) || null;
       // debugger;
       if (this.card?.is_closed === false) {
-        this.ws = this.gameApi.wsConnect(cardId);
-        this.ws.addEventListener('message', this.onServerMessage);
-        this.ws.addEventListener('open', () => {
-          this.ws?.send(JSON.stringify({ id: cardId, type: 'hello', payload: 'hello' }));
-        });
-        this.ws.addEventListener('close', () => {
-          console.log('WS closed');
-        });
+        this.connectWs();
       }
       // (<any>window).__ws = this.ws;
     } catch (e) {
@@ -94,32 +110,68 @@ export default class Card extends Vue {
     }
   }
 
+  private connectWs() {
+    if (!this.card) {
+      return;
+    }
+    this.ws = this.gameApi.wsConnect(this.card.id);
+    this.ws.addEventListener('message', this.onServerMessage);
+    this.ws.addEventListener('open', () => {
+      this.wsReadyState = this.ws?.readyState;
+      this.ws?.send(JSON.stringify({ id: this.card.id, type: 'hello', payload: 'hello' }));
+    });
+    this.ws.addEventListener('close', () => {
+      this.wsReadyState = this.ws?.readyState;
+      console.log('WS closed');
+    });
+  }
+
+  public get isCounterShown(): boolean {
+    return this.roundState === RoundState.STARTED;
+  }
+
   public get isWin(): boolean | null {
     if (this.card?.is_closed === true) {
       return Boolean(this.card.is_win);
     }
-    return null;
+
+    return this.card?.is_win === true || null;
   }
 
-  public onServerMessage(message: MessageEvent) {
-    const data = JSON.parse(message.data) as CommunicationMessages;
+  public onServerMessage(message: MessageEvent<string>) {
+    this.wsReadyState = this.ws?.readyState;
+    let data: CommunicationMessages;
+    try {
+      data = JSON.parse(message.data) as CommunicationMessages;
+    } catch (err) {
+      console.error("Parse data error", err);
+      return;
+    }
 
     if (!data) {
       return;
     }
 
-    if ((data as RefreshMessage).payload?.card) {
+    if (data.payload?.current_round !== undefined) {
+      this.currentRound = data.payload.current_round;
+    }
+
+    if (data.payload?.round_state !== undefined) {
+      this.roundState = data.payload.round_state;
+    }
+
+    if (data.payload?.card !== undefined) {
       this.card = (data as RefreshMessage).payload.card;
     }
 
-    if (data.type === 'counter') {
-      this.counterNumber = ~~data.payload.counter;
+    if (data.payload?.counter !== undefined) {
+      this.counterNumber = data.payload.counter;
     }
     console.log(message);
   }
 
   public get isWsOpen() {
-    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+    return this.ws !== null && this.wsReadyState === WebSocket.OPEN;
   }
 
   public async handleStopGame() {
@@ -139,6 +191,7 @@ export default class Card extends Vue {
     width: 100%;
     align-items: center;
     justify-content: center;
+    transition: background-color 1s ease-in-out;
 
     height: 100%;
   }
@@ -159,6 +212,7 @@ export default class Card extends Vue {
     width: 100%;
     text-align: center;
     height: 80%;
+    transition: background-color 1s ease-in-out;
   }
 
   .card__number {

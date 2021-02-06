@@ -1,5 +1,5 @@
 export enum RoundState {
-  IS_NOT_STARTED,
-  IS_STARTED,
-  IS_FINISHED
+  NOT_STARTED = 'NOT_STARTED',
+  STARTED = 'STARTED',
+  FINISHED = 'FINISHED',
 }

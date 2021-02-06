@@ -1,0 +1,11 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+
+autonumber
+
+Bob -> GameServer: POST /cards
+GameServer -> GameServer: createCard
+GameServer -> Bob : Card#1
+Bob -> GameServer: connection /cards/1/ws (WebSocket)
+
+@enduml

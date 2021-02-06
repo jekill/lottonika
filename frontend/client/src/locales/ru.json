@@ -3,5 +3,8 @@
   "button.leave-game.text": "Покинуть игру",
   "card.you-are-in-the-game": "Вы в игре!",
   "card.wait-text": "Ожидание начала раунда",
-  "card.your-number-text": "Ваш номер"
+  "card.round-started": "Раунд начался",
+  "card.your-number-text": "Ваш номер",
+  "dashboard.round-is.started": "Раунд #{number} начался",
+  "dashboard.round-is.finished": "Раунд #{number} закончился"
 }

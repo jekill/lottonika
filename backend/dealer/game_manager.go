@@ -8,8 +8,6 @@ import (
 	"math/rand"
 	"net/http"
 	"time"
-
-	uuid "github.com/satori/go.uuid"
 )
 
 type actionRequestData struct {
@@ -41,9 +39,11 @@ func CretaeHandleCreateAction(gameStore *ClientsGameCollection) http.HandlerFunc
 
 // StartRound starts a new round
 func StartRound(gameStore *ClientsGameCollection) {
-	roundState = IS_STARTED
+	currentRound++
+	updateRoundState(RoundStateStarted)
 	fmt.Println("Start a round")
-	time.Sleep(time.Second * (10 + time.Duration(rand.Intn(5))))
+	time.Sleep(time.Second * 5)
+	//time.Sleep(time.Second * (10 + time.Duration(rand.Intn(5))))
 	fmt.Println("Sleep end")
 
 	var ids []string
@@ -53,64 +53,87 @@ func StartRound(gameStore *ClientsGameCollection) {
 		ids = append(ids, id)
 	}
 
+	cardsLen := len(ids)
+	if cardsLen < 2 {
+		updateRoundState(RoundStateFinished)
+		TriggerUpdateDashboardState()
+		return
+	}
+
 	rand.Shuffle(len(ids), func(i, j int) {
 		ids[i], ids[j] = ids[j], ids[i]
 	})
 
-	var i int8
-	for i = 0; i < 3; i++ {
-		fmt.Println("_COUNTER:", i+1)
+	for _, i := range []string{"1", "2", "2.5", "2.9", "🤪", "2.999", "3"} {
+		fmt.Println("_COUNTER:", i)
 		for id := range ids {
 			item := (*gameStore)[ids[id]]
-			mc := MessageCounter{
-				Type: "counter",
+			item.sendMessage(Message{
+				Type: MessageTypeCounter,
 				Payload: MessageCounterPayload{
-					Counter: (i + 1),
+					Counter: i,
 				},
-			}
-			SendMessageToGameItemCard(item, Message{
-				Type:    mc.Type,
-				Payload: mc.Payload,
 			})
 		}
-		TriggerUpdateDashboardState(i+1)
+		TriggerUpdateDashboardState(i)
 		time.Sleep(2 * time.Second)
 	}
 
-	for i := range ids[:(len(ids)/2)] {
+	maxFailedIdx := cardsLen / 2
+	for i := range ids {
 		item := (*gameStore)[ids[i]]
 		fmt.Println("Close card:", item.Card.ID)
 
 		fmt.Println("Send message card:", item.Card.ID)
 
-		item.Card.IsClosed = true
-		item.Card.IsWin = false
-
-		for chanIdx, roundChan := range item.roundChans {
-			fmt.Println("Send message card:", item.Card.ID, "for ", chanIdx)
-			messageID := uuid.NewV4().String()
-			roundMessage := &RoundMessage{
-				ID:   messageID,
-				Type: "round",
-				Payload: RoundMessagePayload{
-					IsWin: item.Card.IsWin,
-					Card:  *item.Card,
-				},
-			}
-			roundChan <- Message{
-				Type:    roundMessage.Type,
-				Payload: roundMessage.Payload,
-			}
+		if i <= maxFailedIdx {
+			item.Card.IsClosed = true
+			item.Card.IsWin = false
+		} else {
+			item.Card.IsClosed = false
+			item.Card.IsWin = true
 		}
+
+		item.sendMessage(Message{
+			Type: MessageTypeCardState,
+			Payload: MessageCardStatePayload{
+				Card:         *item.Card,
+				RoundState:   roundState,
+				CurrentRound: currentRound,
+			},
+		})
 	}
-	roundState = IS_FINISHED
+	updateRoundState(RoundStateFinished)
+
 	TriggerUpdateDashboardState()
+	time.Sleep(5 * time.Second)
+
+	RemoveFailedCardsAndEmptyWins()
+
+	updateRoundState(RoundStateStarted)
 }
 
-// SendMessageToGameItemCard sends messages to chanels
-func SendMessageToGameItemCard(gameItem *ClientsGame, message Message) {
-	for _, connChan := range gameItem.roundChans {
-		fmt.Println("SEND TO GAME ITEM CHAN ", gameItem, " connChan: ", connChan)
-		connChan <- message
+func updateRoundState(state string) {
+	roundState = state
+	TriggerUpdateDashboardState()
+	for _, item := range gameStore {
+		item.sendMessage(Message{
+			Type: MessageTypeCardState,
+			Payload: MessageCardStatePayload{
+				Card: *item.Card,
+				CurrentRound: currentRound,
+				RoundState:   roundState,
+			},
+		})
+	}
+}
+
+func RemoveFailedCardsAndEmptyWins() {
+	for id, item := range gameStore {
+		if item.Card.IsClosed && !item.Card.IsWin {
+			delete(gameStore, id)
+		} else {
+			item.Card.IsWin = false
+		}
 	}
 }

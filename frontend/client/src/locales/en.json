@@ -3,6 +3,8 @@
   "button.leave-game.text": "Leave the Game",
   "card.you-are-in-the-game": "You are in the Game!",
   "card.wait-text": "Please, wait",
-  "card.your-number-text": "Your number"
-
+  "card.round-started": "The round is started",
+  "card.your-number-text": "Your number",
+  "dashboard.round-is.STARTED": "The round #{number} is started",
+  "dashboard.round-is.FINISHED": "The round #{number} is finished"
 }

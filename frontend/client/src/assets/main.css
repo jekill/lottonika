@@ -12,11 +12,12 @@
     h2 {
         @apply text-xl;
     }
-
+/*
     button {
         @apply bg-gray-300 px-3 py-1 rounded;
     }
     button:hover{
         @apply opacity-80;
     }
+ */
 }

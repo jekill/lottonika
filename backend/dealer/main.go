@@ -14,31 +14,6 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
-// Card data
-type Card struct {
-	ID       string `json:"id"`
-	Number   int16  `json:"number"`
-	IsClosed bool   `json:"is_closed"`
-	IsWin    bool   `json:"is_win"`
-}
-
-// Message object
-type Message struct {
-	Type    string      `json:"type"`
-	Payload interface{} `json:"payload"`
-}
-
-// MessageCounter message
-type MessageCounter struct {
-	Type    string                `json:"type"`
-	Payload MessageCounterPayload `json:"payload"`
-}
-
-// MessageCounterPayload struct
-type MessageCounterPayload struct {
-	Counter int8 `json:"counter"`
-}
-
 // RoundMessage a message for UI
 type RoundMessage struct {
 	ID      string              `json:"id"`
@@ -46,30 +21,10 @@ type RoundMessage struct {
 	Payload RoundMessagePayload `json:"payload"`
 }
 
-// RoundMessagePayload is the payload
-type RoundMessagePayload struct {
-	IsWin bool `json:"is_win"`
-	Card  Card `json:"card"`
-}
-
-// IsWinMessage is the message about resulf of user's round
-type IsWinMessage struct {
-	IsWin bool `json:"isWin"`
-}
-
-// ClientsGame is information about client's game
-type ClientsGame struct {
-	Card *Card
-	ws   *websocket.Conn
-	// roundChan chan RoundMessage
-	// roundChans []chan IsWinMessage
-	roundChans []chan Message
-}
-
 // ClientsGameCollection store or collection map "card id" -> ClientGame{}
 type ClientsGameCollection map[string]*ClientsGame
 
-var upgader = websocket.Upgrader{
+var wsUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
@@ -77,19 +32,17 @@ var upgader = websocket.Upgrader{
 
 var gameStore = make(ClientsGameCollection, 200)
 
-var outputBus = make(chan Message)
-var inputBus = make(chan Message)
-
 // number on the card autoincremented
-var lastNumberChan = make(chan int16, 1)
-var lastNumber int16 = 0
+var lastNumberChan = make(chan uint16, 1)
+var lastNumber uint16 = 0
 
-var roundState = IS_NOT_STARTED
+var roundState = RoundStateNotStarted
+var currentRound uint8 = 0
 
 const (
-	IS_NOT_STARTED = iota
-	IS_STARTED     = iota
-	IS_FINISHED    = iota
+	RoundStateNotStarted = "NOT_STARTED"
+	RoundStateStarted    = "STARTED"
+	RoundStateFinished   = "FINISHED"
 )
 
 var updateChans = make([]chan interface{}, 0, 200)
@@ -139,7 +92,7 @@ func lastNumberGenerator() {
 }
 
 func handleCardEndpointGET(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("*Card create")
+	fmt.Println("GET Card")
 	w.Header().Set("Content-type", "application/json")
 	params := mux.Vars(r)
 	id, ok := params["id"]
@@ -159,16 +112,16 @@ func handleCardEndpointGET(w http.ResponseWriter, r *http.Request) {
 
 func handleCardEndpointPOST(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-type", "application/json")
-	uuid := uuid.NewV4()
+	id := uuid.NewV4()
 
 	card := Card{
-		ID:     uuid.String(),
+		ID:     id.String(),
 		Number: <-lastNumberChan,
 	}
 
 	gameStore[card.ID] = &ClientsGame{
-		Card:       &card,
-		roundChans: make([]chan Message, 0),
+		Card:     &card,
+		conChans: make([]chan Message, 0),
 	}
 
 	w.WriteHeader(http.StatusCreated)
@@ -177,7 +130,7 @@ func handleCardEndpointPOST(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleStateWs(w http.ResponseWriter, r *http.Request) {
-	ws, err := upgader.Upgrade(w, r, nil)
+	ws, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
 		return
@@ -193,17 +146,18 @@ func handleStateWs(w http.ResponseWriter, r *http.Request) {
 	sort.Sort(SortCardByNumber(cards))
 
 	ws.WriteJSON(&Message{
-		Type: MESSAGE_TYPE_FULL_STATE,
+		Type: MessageTypeFullState,
 		Payload: StateMessagePayload{
-			Cards:      cards,
-			RoundState: roundState,
+			Cards:        cards,
+			RoundState:   roundState,
+			CurrentRound: currentRound,
 		},
 	})
 
 	for {
 		data := <-updateChan
 
-		var counter int8 = -1
+		var counter string = ""
 		counterData, ok := data.(MessageCounterPayload)
 		fmt.Println("__GOT COUNTER", data, "->", counterData, ":::", counter)
 		if ok {
@@ -215,17 +169,22 @@ func handleStateWs(w http.ResponseWriter, r *http.Request) {
 		}
 		sort.Sort(SortCardByNumber(cards))
 		payload := StateMessagePayload{
-			Cards:      cards,
-			RoundState: roundState,
+			Cards:        cards,
+			RoundState:   roundState,
+			CurrentRound: currentRound,
 		}
-		if counter != -1 {
+
+		if counter != "" {
 			fmt.Println("Accept counter", counter)
 			payload.Counter = counter
 		}
-		ws.WriteJSON(&Message{
-			Type:    MESSAGE_TYPE_FULL_STATE,
+
+		message := Message{
+			Type:    MessageTypeFullState,
 			Payload: payload,
-		})
+		}
+		fmt.Println("Message sent", message)
+		ws.WriteJSON(message)
 	}
 }
 
@@ -241,6 +200,7 @@ func handleWSConnections(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Handle ws connect", id)
 	item, ok := gameStore[id]
 	fmt.Println("Item card is found in the storage", item.Card.ID)
+	fmt.Println("card conns", item.conChans)
 
 	if !ok {
 		fmt.Println("Id not found")
@@ -248,21 +208,29 @@ func handleWSConnections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ws, err := upgader.Upgrade(w, r, nil)
+	ws, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	roundChan := make(chan Message, 0)
+	//roundChan := make(chan Message, 0)
+	roundChanIndex, roundChan := item.addConChan()
+	fmt.Println("Added a new card con chan", item.conChans)
 
-	item.roundChans = append(item.roundChans, roundChan)
-	roundChanIndex := len(item.roundChans) - 1
+	fmt.Println("CARD: add a channnel: idx-", roundChanIndex, "chan-", roundChan)
+	defer func() {
+		fmt.Println("Remove card conns", item.conChans, len(item.conChans), roundChanIndex)
+		item.removeConChan(roundChanIndex)
+	}()
+
+	//item.conChans = append(item.conChans, roundChan)
+	//roundChanIndex := len(item.conChans) - 1
 
 	defer func() {
 		ws.Close()
 		fmt.Println("Websocket closed for card:", item.Card.ID)
-		close(roundChan)
-		item.roundChans = append(item.roundChans[:roundChanIndex], item.roundChans[(roundChanIndex+1):]...)
+		//close(roundChan)
+		//item.conChans = append(item.conChans[:roundChanIndex], item.conChans[(roundChanIndex+1):]...)
 	}()
 
 	// item.ws = ws
@@ -312,7 +280,7 @@ out:
 }
 
 // TriggerUpdateDashboardState triggers updating clients state on dashboard
-func TriggerUpdateDashboardState(counter ...int8) {
+func TriggerUpdateDashboardState(counter ...string) {
 	for _, updateChan := range updateChans {
 		if len(updateChan) < cap(updateChan) {
 			if len(counter) > 0 {

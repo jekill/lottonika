@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 )
 
 type CCC struct {
@@ -14,6 +15,13 @@ type someStr struct {
 }
 
 func main() {
+	num := fmt.Sprintf("%d", 111)
+	fmt.Println(num)
+	fmt.Println("string(123):", string(123))
+	num = fmt.Sprint(1234)
+	fmt.Println("Sprint", num)
+	fmt.Println("strconv", strconv.Itoa(1233))
+
 	fmt.Println("MAP")
 	store := make(map[string]*someStr)
 

@@ -27,16 +27,17 @@ export interface RoundMessage extends CommonMessage {
 export interface CounterMessage extends CommonMessage {
   type: 'counter';
   payload: {
-    counter: number;
+    counter: string;
   };
 }
 
 export interface UpdateGameStateMessage extends CommonMessage {
   type: 'state';
   payload: {
-    counter?: number;
+    counter?: string;
     cards: CardDto[];
     round_state?: RoundState;
+    current_round?: number;
   };
 }
 
